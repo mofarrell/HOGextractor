@@ -4,8 +4,6 @@
 //
 
 #include <math.h>
-#define AVX
-#define DOUBLE
 #include "vector_intrinsics.h"
 #include "mex.h"
 
@@ -25,6 +23,7 @@
 
 static const vreal point5 = set_real(0.5f);
 static const vreal one = set_real(1.0f);
+static const vnat one_nat = set_nat(1);
 
 // unit vectors used to compute gradient orientation
 real uu[9] = {1.0000, 
@@ -72,6 +71,9 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
   real *hist = (real *)mxCalloc(blocks[0]*blocks[1]*18, sizeof(real));
   real *norm = (real *)mxCalloc(blocks[0]*blocks[1], sizeof(real));
 
+  const vnat blocks0 = set_nat(blocks[0]);
+  const vnat blocks1 = set_nat(blocks[1]);
+
   // memory for HOG features
   int out[3];
   out[0] = max(blocks[0]-2, 0);
@@ -95,6 +97,9 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
     nat ixp = (nat)floor(xp);
     real vx0 = xp-ixp;
     real vx1 = 1.0-vx0;
+    vnat vixp = set_nat(ixp);
+    vreal vvx0 = set_real(vx0);
+    vreal vvx1 = set_real(vx1);
     for (int y = 1; y < ystop; y += SIMD_WIDTH) {
       // Make sure we don't access anything bad
       ASSERT(y+SIMD_WIDTH-1 <= dims[0]-2);
@@ -251,48 +256,64 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       yp = div_vreal(yp, vsbin);
       yp = sub_vreal(yp, point5);
       vreal fyp = floor_vreal(yp);
-      vnat iyp = vreal_convertto_vnat(fyp);
-      vreal vy0 = sub_vreal(yp, fyp);
-      vreal vy1 = sub_vreal(one, vy0);
+      vnat viyp = vreal_convertto_vnat(fyp);
+      vreal vvy0 = sub_vreal(yp, fyp);
+      vreal vvy1 = sub_vreal(one, vvy0);
       v = sqrt_vreal(v);
 
-      real vs[SIMD_WIDTH];
-      store_vreal(vs, v);
-
-      nat best_os[SIMD_WIDTH];
-      store_vnat(best_os, best_o);
-
       nat iyps[SIMD_WIDTH];
-      store_vnat(iyps, iyp);
+      store_vnat(iyps, viyp);
       
-      real vy0s[SIMD_WIDTH];
-      store_vreal(vy0s, vy0);
-      
-      real vy1s[SIMD_WIDTH];
-      store_vreal(vy1s, vy1);
+      nat histp[4][SIMD_WIDTH];
+      real valplus[4][SIMD_WIDTH];
 
+      vnat vhistpup = viyp;
+      vnat vhistpdown = add_vnat(viyp, one_nat);
+      vnat vhistpleft = mul_vnat(vixp, blocks0);
+      vnat vhistpright = mul_vnat(add_vnat(vixp, one_nat), blocks0);
+      vnat vhistpbase = mul_vnat(mul_vnat(best_o, blocks0), blocks1);
+
+      vnat vhistp = add_vnat(add_vnat(vhistpup, vhistpleft), vhistpbase);
+      vreal vvalplus = mul_vreal(mul_vreal(vvx1, vvy1), v);
+
+      store_vnat(histp[0], vhistp);
+      store_vreal(valplus[0], vvalplus);
+
+      vhistp = add_vnat(add_vnat(vhistpup, vhistpright), vhistpbase);
+      vvalplus = mul_vreal(mul_vreal(vvx0, vvy1), v);
+
+      store_vnat(histp[1], vhistp);
+      store_vreal(valplus[1], vvalplus);
+      
+      vhistp = add_vnat(add_vnat(vhistpdown, vhistpleft), vhistpbase);
+      vvalplus = mul_vreal(mul_vreal(vvx1, vvy0), v);
+
+      store_vnat(histp[2], vhistp);
+      store_vreal(valplus[2], vvalplus);
+      
+      vhistp = add_vnat(add_vnat(vhistpdown, vhistpright), vhistpbase);
+      vvalplus = mul_vreal(mul_vreal(vvx0, vvy0), v);
+
+      store_vnat(histp[3], vhistp);
+      store_vreal(valplus[3], vvalplus);
       // Finish updating histograms sequentially.  This is a scatter.
       for (int yoff = 0; yoff < SIMD_WIDTH; yoff ++) {
         // add to 4 histograms around pixel using linear interpolation
 
         if (ixp >= 0 && iyps[yoff] >= 0) {
-          *(hist + ixp*blocks[0] + iyps[yoff] + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx1*vy1s[yoff]*(vs[yoff]);
+          *(hist + histp[0][yoff]) += valplus[0][yoff];
         }
 
         if (ixp+1 < blocks[1] && iyps[yoff] >= 0) {
-          *(hist + (ixp+1)*blocks[0] + iyps[yoff] + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx0*vy1s[yoff]*(vs[yoff]);
+          *(hist + histp[1][yoff]) += valplus[1][yoff];
         }
 
         if (ixp >= 0 && iyps[yoff]+1 < blocks[0]) {
-          *(hist + ixp*blocks[0] + (iyps[yoff]+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx1*vy0s[yoff]*(vs[yoff]);
+          *(hist + histp[2][yoff]) += valplus[2][yoff];
         }
 
         if (ixp+1 < blocks[1] && iyps[yoff]+1 < blocks[0]) {
-          *(hist + (ixp+1)*blocks[0] + (iyps[yoff]+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx0*vy0s[yoff]*(vs[yoff]);
+          *(hist + histp[3][yoff]) += valplus[3][yoff];
         }
       }
     }

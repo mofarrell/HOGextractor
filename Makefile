@@ -1,6 +1,6 @@
 
 
-CXXFLAGS=-msse4.1
+CXXFLAGS=-msse4.1 -std=c++0x
 OBJS=features_pedro.mexa64 \
      features_pedro_float.mexa64 \
      features_madmex.mexa64

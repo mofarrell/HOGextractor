@@ -6,7 +6,6 @@
 #include <math.h>
 #define DOUBLE
 #include "vector_intrinsics.h"
-typedef uint16_t char16_t;
 #include "mex.h"
 
 // small value, used to avoid division by zero

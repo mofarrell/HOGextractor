@@ -11,7 +11,7 @@ all:	$(OBJS)
 run:	$(OBJS)
 	matlab -nodisplay -nosplash -nodesktop -r "run('madmex.m');"
 
-%.mexa64:	%.cc
+%.mexa64:	%.cc	vector_intrinsics.h
 	mex CXXFLAGS='$$CXXFLAGS $(CXXFLAGS)' $<
 
 clean:

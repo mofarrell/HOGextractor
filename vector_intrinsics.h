@@ -1,14 +1,15 @@
 // Created by Michael and Bram
 //
 
-#include "smmintrin.h"
-#include "xmmintrin.h"
-#include "emmintrin.h"
-
 //#define AVX
 //#define DOUBLE
 
 #ifndef AVX
+// Include SSE headers
+#include "smmintrin.h"
+#include "xmmintrin.h"
+#include "emmintrin.h"
+
 #ifndef DOUBLE
 ////////////////////////////
 // SSE with SINGLE PRECISION
@@ -125,6 +126,9 @@ const vnat SIMD_WIDTH_IDX_NAT = set_vnat(0L, 1L);
 
 #endif
 #else
+// Include AVX headers
+#include "immintrin.h"
+
 #ifndef DOUBLE
 ////////////////////////////
 // AVX with SINGLE PRECISION
@@ -201,39 +205,39 @@ typedef long nat;
 typedef __m128d vmask;
 
 // Real operations
-#define set_real(v) _mm_set_pd1((v))
-#define set_vreal(v0, v1) _mm_set_pd((v1), (v0))
-#define load_real(p) _mm_load_pd1((p))
-#define load_vreal(p) _mm_loadu_pd((p))
-#define store_vreal(p, v) _mm_storeu_pd((p), (v))
-#define add_vreal(v1, v2) _mm_add_pd((v1), (v2))
-#define sub_vreal(v1, v2) _mm_sub_pd((v1), (v2))
-#define mul_vreal(v1, v2) _mm_mul_pd((v1), (v2))
-#define div_vreal(v1, v2) _mm_div_pd((v1), (v2))
-#define floor_vreal(v) _mm_floor_pd((v))
-#define sqrt_vreal(v) _mm_sqrt_pd((v))
-#define or_vreal(v1, v2) _mm_or_pd((v1), (v2))
-#define and_vreal(m, v) _mm_and_pd((m), (v))
-#define andnot_vreal(m, v) _mm_andnot_pd((m), (v))
-#define cmpgt_vreal(v1, v2) _mm_cmpgt_pd((v1), (v2))
+#define set_real(v) _mm256_set_pd1((v))
+#define set_vreal(v0, v1) _mm256_set_pd((v1), (v0))
+#define load_real(p) _mm256_load_pd1((p))
+#define load_vreal(p) _mm256_loadu_pd((p))
+#define store_vreal(p, v) _mm256_storeu_pd((p), (v))
+#define add_vreal(v1, v2) _mm256_add_pd((v1), (v2))
+#define sub_vreal(v1, v2) _mm256_sub_pd((v1), (v2))
+#define mul_vreal(v1, v2) _mm256_mul_pd((v1), (v2))
+#define div_vreal(v1, v2) _mm256_div_pd((v1), (v2))
+#define floor_vreal(v) _mm256_floor_pd((v))
+#define sqrt_vreal(v) _mm256_sqrt_pd((v))
+#define or_vreal(v1, v2) _mm256_or_pd((v1), (v2))
+#define and_vreal(m, v) _mm256_and_pd((m), (v))
+#define andnot_vreal(m, v) _mm256_andnot_pd((m), (v))
+#define cmpgt_vreal(v1, v2) _mm256_cmpgt_pd((v1), (v2))
 
 // Type casts and conversion
-#define vnat_to_vreal(v) _mm_castsi128_pd((v))
-#define vreal_to_vnat(v) _mm_castpd_si128((v))
-#define vnat_convertto_vreal(v) _mm_cvtepi32_pd(_mm_cvtepi64_epi32((v)))
-#define vreal_convertto_vnat(v) _mm_cvtepi32_epi64(_mm_cvtpd_epi32((v)))
+#define vnat_to_vreal(v) _mm256_castsi256_pd((v))
+#define vreal_to_vnat(v) _mm256_castpd_si256((v))
+#define vnat_convertto_vreal(v) _mm256_cvtepi32_pd(_mm256_cvtepi64_epi32((v)))
+#define vreal_convertto_vnat(v) _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32((v)))
 
 // Natural operations
-#define set_nat(v) _mm_set1_epi64((__m64)(nat)(v))
-#define set_vnat(v0, v1) _mm_set_epi64((__m64)(nat)(v1), (__m64)(nat)(v0))
-#define load_vnat(p) _mm_loadu_si128((__m64 *)(p))
-#define store_vnat(p, v) _mm_storeu_si128((vnat *)(p), (v))
-#define add_vnat(v1, v2) _mm_add_epi64((v1), (v2))
-#define sub_vnat(v1, v2) _mm_sub_epi64((v1), (v2))
-#define mul_vnat(v1, v2) _mm_mul_epi64((v1), (v2))
+#define set_nat(v) _mm256_set1_epi64((__m64)(nat)(v))
+#define set_vnat(v0, v1) _mm256_set_epi64((__m64)(nat)(v1), (__m64)(nat)(v0))
+#define load_vnat(p) _mm256_loadu_si256((__m64 *)(p))
+#define store_vnat(p, v) _mm256_storeu_si256((vnat *)(p), (v))
+#define add_vnat(v1, v2) _mm256_add_epi64((v1), (v2))
+#define sub_vnat(v1, v2) _mm256_sub_epi64((v1), (v2))
+#define mul_vnat(v1, v2) _mm256_mul_epi64((v1), (v2))
 #define div_vnat(v1, v2) _mm_div_epi64((v1), (v2))
-#define or_vnat(v1, v2) _mm_or_si128((v1), (v2))
-#define and_vnat(m, v) _mm_and_si128(vreal_to_vnat((m)), (v))
+#define or_vnat(v1, v2) _mm256_or_si256((v1), (v2))
+#define and_vnat(m, v) _mm256_and_si256(vreal_to_vnat((m)), (v))
 #define andnot_vnat(m, v) _mm256_andnot_si256(vreal_to_vnat((m)), (v))
 
 // Constants

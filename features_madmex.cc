@@ -4,6 +4,7 @@
 //
 
 #include <math.h>
+#define AVX
 #define DOUBLE
 #include "vector_intrinsics.h"
 #include "mex.h"

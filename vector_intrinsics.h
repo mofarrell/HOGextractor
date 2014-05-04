@@ -206,7 +206,7 @@ typedef __m128d vmask;
 
 // Real operations
 #define set_real(v) _mm256_set_pd1((v))
-#define set_vreal(v0, v1) _mm256_set_pd((v1), (v0))
+#define set_vreal(v0, v1, v2, v3) _mm256_set_pd((v3), (v2), (v1), (v0))
 #define load_real(p) _mm256_load_pd1((p))
 #define load_vreal(p) _mm256_loadu_pd((p))
 #define store_vreal(p, v) _mm256_storeu_pd((p), (v))
@@ -228,8 +228,10 @@ typedef __m128d vmask;
 #define vreal_convertto_vnat(v) _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32((v)))
 
 // Natural operations
-#define set_nat(v) _mm256_set1_epi64((__m64)(nat)(v))
-#define set_vnat(v0, v1) _mm256_set_epi64((__m64)(nat)(v1), (__m64)(nat)(v0))
+#define set_nat(v) _mm256_set1_epi64x((__m64)(nat)(v))
+#define set_vnat(v0, v1, v2, v3) \
+    _mm256_set_epi64((__m64)(nat)(v3), (__m64)(nat)(v2), \
+                     (__m64)(nat)(v1), (__m64)(nat)(v0))
 #define load_vnat(p) _mm256_loadu_si256((__m64 *)(p))
 #define store_vnat(p, v) _mm256_storeu_si256((vnat *)(p), (v))
 #define add_vnat(v1, v2) _mm256_add_epi64((v1), (v2))

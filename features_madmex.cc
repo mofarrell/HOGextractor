@@ -1,7 +1,11 @@
+// Original Code by Pedro Felzenszwalb
+// Modified by Michael and Bram to include
+// Intel vector intrinsics.
+//
+
 #include <math.h>
-#include "smmintrin.h"
-#include "xmmintrin.h"
-#include "emmintrin.h"
+#define DOUBLE
+#include "vector_intrinsics.h"
 #include "mex.h"
 
 // small value, used to avoid division by zero
@@ -18,14 +22,11 @@
 #define dbg_printf(...) do {} while (0);
 #endif  // DEBUG
 
-static const __m128 SIGNMASK = 
-               _mm_castsi128_ps(_mm_set1_epi32(0x80000000));
-static const __m128 point5 = _mm_set_ps1(0.5f);
-static const __m128 one = _mm_set_ps1(1.0f);
-static const __m128 v0123 = _mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f);
+static const vreal point5 = set_real(0.5f);
+static const vreal one = set_real(1.0f);
 
 // unit vectors used to compute gradient orientation
-float uu[9] = {1.0000, 
+real uu[9] = {1.0000, 
   0.9397, 
   0.7660, 
   0.500, 
@@ -34,7 +35,7 @@ float uu[9] = {1.0000,
   -0.5000, 
   -0.7660, 
   -0.9397};
-float vv[9] = {0.0000, 
+real vv[9] = {0.0000, 
   0.3420, 
   0.6428, 
   0.8660, 
@@ -44,121 +45,123 @@ float vv[9] = {0.0000,
   0.6428, 
   0.3420};
 
-static inline float min(float x, float y) { return (x <= y ? x : y); }
-static inline float max(float x, float y) { return (x <= y ? y : x); }
+static inline real min(real x, real y) { return (x <= y ? x : y); }
+static inline real max(real x, real y) { return (x <= y ? y : x); }
 
 static inline int min(int x, int y) { return (x <= y ? x : y); }
 static inline int max(int x, int y) { return (x <= y ? y : x); }
 
 // main function:
-// takes a float color image and a bin size 
+// takes a real color image and a bin size 
 // returns HOG features
 mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
-  float *im = (float *)mxGetPr(mximage);
+  real *im = (real *)mxGetPr(mximage);
   const int *dims = mxGetDimensions(mximage);
   if (mxGetNumberOfDimensions(mximage) != 3 ||
       dims[2] != 3 ||
-      mxGetClassID(mximage) != mxSINGLE_CLASS)
+      mxGetClassID(mximage) != mxCLASS)
     mexErrMsgTxt("Invalid input");
 
   int sbin = (int)mxGetScalar(mxsbin);
 
   // memory for caching orientation histograms & their norms
   int blocks[2];
-  blocks[0] = (int)round((float)dims[0]/(float)sbin);
-  blocks[1] = (int)round((float)dims[1]/(float)sbin);
-  float *hist = (float *)mxCalloc(blocks[0]*blocks[1]*18, sizeof(float));
-  float *norm = (float *)mxCalloc(blocks[0]*blocks[1], sizeof(float));
+  blocks[0] = (int)round((real)dims[0]/(real)sbin);
+  blocks[1] = (int)round((real)dims[1]/(real)sbin);
+  real *hist = (real *)mxCalloc(blocks[0]*blocks[1]*18, sizeof(real));
+  real *norm = (real *)mxCalloc(blocks[0]*blocks[1], sizeof(real));
 
   // memory for HOG features
   int out[3];
   out[0] = max(blocks[0]-2, 0);
   out[1] = max(blocks[1]-2, 0);
   out[2] = 27+4;
-  mxArray *mxfeat = mxCreateNumericArray(3, out, mxSINGLE_CLASS, mxREAL);
-  float *feat = (float *)mxGetPr(mxfeat);
+  mxArray *mxfeat = mxCreateNumericArray(3, out, mxCLASS, mxREAL);
+  real *feat = (real *)mxGetPr(mxfeat);
 
   int visible[2];
   visible[0] = blocks[0]*sbin;
   visible[1] = blocks[1]*sbin;
 
   // Vectorized loop
-  const __m128 vsbin = _mm_set_ps1((float)sbin);
-  int ystop = (dims[0]-2) - ((dims[0]-2)-1) % 4;
+  const vreal vsbin = set_real((real)sbin);
+  int ystop = (dims[0]-2) - ((dims[0]-2)-1) % SIMD_WIDTH;
   ASSERT(ystop <= visible[0]-1);  // The rest is done sequentially
   ASSERT((ystop - 1) % 4 == 0);  // Must be a multiple of 4 for SSE instructions
   dbg_printf("ystop  diff to visible[0]-1 %d\n", (visible[0]-1)-ystop);
   for (int x = 1; x < visible[1]-1; x++) {
-    float xp = ((float)x+0.5)/(float)sbin - 0.5;
-    int ixp = (int)floor(xp);
-    float vx0 = xp-ixp;
-    float vx1 = 1.0-vx0;
-    for (int y = 1; y < ystop; y += 4) {
-      ASSERT(y+3 <= dims[0]-2);  // Make sure we don't access anything bad
+    real xp = ((real)x+0.5)/(real)sbin - 0.5;
+    nat ixp = (nat)floor(xp);
+    real vx0 = xp-ixp;
+    real vx1 = 1.0-vx0;
+    for (int y = 1; y < ystop; y += SIMD_WIDTH) {
+      // Make sure we don't access anything bad
+      ASSERT(y+SIMD_WIDTH-1 <= dims[0]-2);
+
       // compute gradient fist color channel (RED)
       // Code replaced:
-      // float *s = im + min(x, dims[1]-2)*dims[0] + min(y, dims[0]-2);
-      // float dy = *(s+1) - *(s-1);
-      // float dx = *(s+dims[0]) - *(s-dims[0]);
-      // float v = dx*dx + dy*dy;
-      float *sp = im + min(x, dims[1]-2)*dims[0] + y;
-      __m128 s = _mm_loadu_ps(sp);
+      // real *s = im + min(x, dims[1]-2)*dims[0] + min(y, dims[0]-2);
+      // real dy = *(s+1) - *(s-1);
+      // real dx = *(s+dims[0]) - *(s-dims[0]);
+      // real v = dx*dx + dy*dy;
+      real *sp = im + min(x, dims[1]-2)*dims[0] + y;
+      vreal s = load_vreal(sp);
       
-      __m128 sp1 = _mm_loadu_ps((sp + 1));
-      __m128 sm1 = _mm_loadu_ps((sp - 1));
-      __m128 dy = _mm_sub_ps(sp1, sm1);
+      vreal sp1 = load_vreal((sp + 1));
+      vreal sm1 = load_vreal((sp - 1));
+      vreal dy = sub_vreal(sp1, sm1);
 
-      __m128 spd0 = _mm_loadu_ps((sp + dims[0]));
-      __m128 smd0 = _mm_loadu_ps((sp - dims[0]));
-      __m128 dx = _mm_sub_ps(spd0, smd0);
+      vreal spd0 = load_vreal((sp + dims[0]));
+      vreal smd0 = load_vreal((sp - dims[0]));
+      vreal dx = sub_vreal(spd0, smd0);
 
-      __m128 vl = _mm_mul_ps(dx, dx);
-      __m128 vr = _mm_mul_ps(dy, dy);
-      __m128 v = _mm_add_ps(vl, vr);
+      vreal vl = mul_vreal(dx, dx);
+      vreal vr = mul_vreal(dy, dy);
+      vreal v = add_vreal(vl, vr);
 
 
       // compute gradient second color channel (GREEN)
       // Code replaced:
       // s += dims[0]*dims[1];
-      // float dy2 = *(s+1) - *(s-1);
-      // float dx2 = *(s+dims[0]) - *(s-dims[0]);
-      // float v2 = dx2*dx2 + dy2*dy2;
+      // real dy2 = *(s+1) - *(s-1);
+      // real dx2 = *(s+dims[0]) - *(s-dims[0]);
+      // real v2 = dx2*dx2 + dy2*dy2;
       sp += dims[0]*dims[1];
-      s = _mm_loadu_ps(sp);
+      s = load_vreal(sp);
       
-      sp1 = _mm_loadu_ps((sp + 1));
-      sm1 = _mm_loadu_ps((sp - 1));
-      __m128 dy2 = _mm_sub_ps(sp1, sm1);
+      sp1 = load_vreal((sp + 1));
+      sm1 = load_vreal((sp - 1));
+      vreal dy2 = sub_vreal(sp1, sm1);
 
-      spd0 = _mm_loadu_ps((sp + dims[0]));
-      smd0 = _mm_loadu_ps((sp - dims[0]));
-      __m128 dx2 = _mm_sub_ps(spd0, smd0);
+      spd0 = load_vreal((sp + dims[0]));
+      smd0 = load_vreal((sp - dims[0]));
+      vreal dx2 = sub_vreal(spd0, smd0);
 
-      vl = _mm_mul_ps(dx2, dx2);
-      vr = _mm_mul_ps(dy2, dy2);
-      __m128 v2 = _mm_add_ps(vl, vr);
+      vl = mul_vreal(dx2, dx2);
+      vr = mul_vreal(dy2, dy2);
+      vreal v2 = add_vreal(vl, vr);
 
 
       // compute gradient third color channel (BLUE)
       // Code replaced:
       // s += dims[0]*dims[1];
-      // float dy3 = *(s+1) - *(s-1);
-      // float dx3 = *(s+dims[0]) - *(s-dims[0]);
-      // float v3 = dx3*dx3 + dy3*dy3;
+      // real dy3 = *(s+1) - *(s-1);
+      // real dx3 = *(s+dims[0]) - *(s-dims[0]);
+      // real v3 = dx3*dx3 + dy3*dy3;
       sp += dims[0]*dims[1];
-      s = _mm_loadu_ps(sp);
+      s = load_vreal(sp);
       
-      sp1 = _mm_loadu_ps((sp + 1));
-      sm1 = _mm_loadu_ps((sp - 1));
-      __m128 dy3 = _mm_sub_ps(sp1, sm1);
+      sp1 = load_vreal((sp + 1));
+      sm1 = load_vreal((sp - 1));
+      vreal dy3 = sub_vreal(sp1, sm1);
 
-      spd0 = _mm_loadu_ps((sp + dims[0]));
-      smd0 = _mm_loadu_ps((sp - dims[0]));
-      __m128 dx3 = _mm_sub_ps(spd0, smd0);
+      spd0 = load_vreal((sp + dims[0]));
+      smd0 = load_vreal((sp - dims[0]));
+      vreal dx3 = sub_vreal(spd0, smd0);
 
-      vl = _mm_mul_ps(dx3, dx3);
-      vr = _mm_mul_ps(dy3, dy3);
-      __m128 v3 = _mm_add_ps(vl, vr);
+      vl = mul_vreal(dx3, dx3);
+      vr = mul_vreal(dy3, dy3);
+      vreal v3 = add_vreal(vl, vr);
 
 
       // pick channel with strongest gradient
@@ -173,29 +176,29 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       //   dx = dx3;
       //   dy = dy3;
       // }
-      __m128 mask = _mm_cmpgt_ps(v2, v);
-      v = _mm_or_ps(_mm_and_ps(mask, v2),
-                    _mm_andnot_ps(mask, v));
-      dx = _mm_or_ps(_mm_and_ps(mask, dx2),
-                     _mm_andnot_ps(mask, dx));
-      dy = _mm_or_ps(_mm_and_ps(mask, dy2),
-                     _mm_andnot_ps(mask, dy));
+      vmask mask = cmpgt_vreal(v2, v);
+      v = or_vreal(and_vreal(mask, v2),
+                    andnot_vreal(mask, v));
+      dx = or_vreal(and_vreal(mask, dx2),
+                     andnot_vreal(mask, dx));
+      dy = or_vreal(and_vreal(mask, dy2),
+                     andnot_vreal(mask, dy));
 
-      mask = _mm_cmpgt_ps(v3, v);
-      v = _mm_or_ps(_mm_and_ps(mask, v3),
-                    _mm_andnot_ps(mask, v));
-      dx = _mm_or_ps(_mm_and_ps(mask, dx3),
-                     _mm_andnot_ps(mask, dx));
-      dy = _mm_or_ps(_mm_and_ps(mask, dy3),
-                     _mm_andnot_ps(mask, dy));
+      mask = cmpgt_vreal(v3, v);
+      v = or_vreal(and_vreal(mask, v3),
+                    andnot_vreal(mask, v));
+      dx = or_vreal(and_vreal(mask, dx3),
+                     andnot_vreal(mask, dx));
+      dy = or_vreal(and_vreal(mask, dy3),
+                     andnot_vreal(mask, dy));
 
 
       // snap to one of 18 orientations
       // Code replaced:
-      // float best_dot = 0;
+      // real best_dot = 0;
       // int best_o = 0;
       // for (int o = 0; o < 9; o++) {
-      //   float dot = uu[o]*dx + vv[o]*dy;
+      //   real dot = uu[o]*dx + vv[o]*dy;
       //   if (dot > best_dot) {
       //     best_dot = dot;
       //     best_o = o;
@@ -204,71 +207,71 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       //     best_o = o+9;
       //   }
       // }
-      __m128 best_dot = _mm_set_ps1(0.0f);
-      __m128i best_o = _mm_set1_epi32(0);
+      vreal best_dot = set_real(0.0f);
+      vnat best_o = set_nat(0);
       for (int o = 0; o < 9; o++) {
-        __m128 uuo = _mm_load_ps1(uu + o);
-        __m128 vvo = _mm_load_ps1(vv + o);
-        uuo = _mm_mul_ps(uuo, dx);
-        vvo = _mm_mul_ps(vvo, dy);
-        
-        __m128 dot = _mm_add_ps(uuo, vvo);
-        mask = _mm_cmpgt_ps(dot, best_dot);
-        __m128i vo = _mm_set1_epi32(o);
-        best_dot = _mm_or_ps(_mm_and_ps(mask, dot),
-                             _mm_andnot_ps(mask, best_dot));
-        best_o = _mm_or_si128(_mm_and_si128(_mm_castps_si128(mask), vo),
-                              _mm_andnot_si128(_mm_castps_si128(mask), best_o));
+        vreal uuo = load_real(uu + o);
+        vreal vvo = load_real(vv + o);
+        uuo = mul_vreal(uuo, dx);
+        vvo = mul_vreal(vvo, dy);
+        vreal dot = add_vreal(uuo, vvo);
 
-        dot = _mm_xor_ps(dot, SIGNMASK);
-        mask = _mm_cmpgt_ps(dot, best_dot);
-        vo = _mm_set1_epi32(o + 9);
-        best_dot = _mm_or_ps(_mm_and_ps(mask, dot),
-                             _mm_andnot_ps(mask, best_dot));
-        best_o = _mm_or_si128(_mm_and_si128(_mm_castps_si128(mask), vo),
-                              _mm_andnot_si128(_mm_castps_si128(mask), best_o));
+        mask = cmpgt_vreal(dot, best_dot);
+        vnat vo = set_nat(o);
+        best_dot = or_vreal(and_vreal(mask, dot),
+                            andnot_vreal(mask, best_dot));
+        best_o = or_vnat(and_vnat(mask, vo),
+                         andnot_vnat(mask, best_o));
+
+        dot = neg_vreal(dot);
+        mask = cmpgt_vreal(dot, best_dot);
+        vo = set_nat(o + 9);
+        best_dot = or_vreal(and_vreal(mask, dot),
+                            andnot_vreal(mask, best_dot));
+        best_o = or_vnat(and_vnat(mask, vo),
+                         andnot_vnat(mask, best_o));
       }
 
 
       // Update histograms
       // Replaced code:  Some code outside inner loop
-      // float xp = ((float)x+0.5)/(float)sbin - 0.5;
-      // float yp = ((float)y+0.5)/(float)sbin - 0.5;
+      // real xp = ((real)x+0.5)/(real)sbin - 0.5;
+      // real yp = ((real)y+0.5)/(real)sbin - 0.5;
       // int ixp = (int)floor(xp);
       // int iyp = (int)floor(yp);
-      // float vx0 = xp-ixp;
-      // float vy0 = yp-iyp;
-      // float vx1 = 1.0-vx0;
-      // float vy1 = 1.0-vy0;
+      // real vx0 = xp-ixp;
+      // real vy0 = yp-iyp;
+      // real vx1 = 1.0-vx0;
+      // real vy1 = 1.0-vy0;
       // v = sqrt(v);
-      __m128 vy = _mm_set_ps1((float)y);
-      vy = _mm_add_ps(vy, v0123);
-      __m128 yp = _mm_add_ps(vy, point5);
-      yp = _mm_div_ps(yp, vsbin);
-      yp = _mm_sub_ps(yp, point5);
-      __m128 fyp = _mm_floor_ps(yp);
-      __m128i iyp = _mm_cvtps_epi32(fyp);
-      __m128 vy0 = _mm_sub_ps(yp, fyp);
-      __m128 vy1 = _mm_sub_ps(one, vy0);
-      v = _mm_sqrt_ps(v);
+      vreal vy = set_real((real)y);
+      vy = add_vreal(vy, SIMD_WIDTH_IDX_REAL);
+      vreal yp = add_vreal(vy, point5);
+      yp = div_vreal(yp, vsbin);
+      yp = sub_vreal(yp, point5);
+      vreal fyp = floor_vreal(yp);
+      vnat iyp = vreal_convertto_vnat(fyp);
+      vreal vy0 = sub_vreal(yp, fyp);
+      vreal vy1 = sub_vreal(one, vy0);
+      v = sqrt_vreal(v);
 
-      float vs[4];
-      _mm_storeu_ps(vs, v);
+      real vs[SIMD_WIDTH];
+      store_vreal(vs, v);
 
-      int best_os[4];
-      _mm_storeu_si128((__m128i *)best_os, best_o);
+      nat best_os[SIMD_WIDTH];
+      store_vnat(best_os, best_o);
 
-      int iyps[4];
-      _mm_storeu_si128((__m128i *)iyps, iyp);
+      nat iyps[SIMD_WIDTH];
+      store_vnat(iyps, iyp);
       
-      float vy0s[4];
-      _mm_storeu_ps(vy0s, vy0);
+      real vy0s[SIMD_WIDTH];
+      store_vreal(vy0s, vy0);
       
-      float vy1s[4];
-      _mm_storeu_ps(vy1s, vy1);
+      real vy1s[SIMD_WIDTH];
+      store_vreal(vy1s, vy1);
 
       // Finish updating histograms sequentially.  This is a scatter.
-      for (int yoff = 0; yoff < 4; yoff ++) {
+      for (int yoff = 0; yoff < SIMD_WIDTH; yoff ++) {
         // add to 4 histograms around pixel using linear interpolation
 
         if (ixp >= 0 && iyps[yoff] >= 0) {
@@ -294,22 +297,22 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
     }
     for (int y = ystop; y < visible[0]-1; y++) {
       // first color channel
-      float *s = im + min(x, dims[1]-2)*dims[0] + min(y, dims[0]-2);
-      float dy = *(s+1) - *(s-1);
-      float dx = *(s+dims[0]) - *(s-dims[0]);
-      float v = dx*dx + dy*dy;
+      real *s = im + min(x, dims[1]-2)*dims[0] + min(y, dims[0]-2);
+      real dy = *(s+1) - *(s-1);
+      real dx = *(s+dims[0]) - *(s-dims[0]);
+      real v = dx*dx + dy*dy;
 
       // second color channel
       s += dims[0]*dims[1];
-      float dy2 = *(s+1) - *(s-1);
-      float dx2 = *(s+dims[0]) - *(s-dims[0]);
-      float v2 = dx2*dx2 + dy2*dy2;
+      real dy2 = *(s+1) - *(s-1);
+      real dx2 = *(s+dims[0]) - *(s-dims[0]);
+      real v2 = dx2*dx2 + dy2*dy2;
 
       // third color channel
       s += dims[0]*dims[1];
-      float dy3 = *(s+1) - *(s-1);
-      float dx3 = *(s+dims[0]) - *(s-dims[0]);
-      float v3 = dx3*dx3 + dy3*dy3;
+      real dy3 = *(s+1) - *(s-1);
+      real dx3 = *(s+dims[0]) - *(s-dims[0]);
+      real v3 = dx3*dx3 + dy3*dy3;
 
       // pick channel with strongest gradient
       if (v2 > v) {
@@ -324,10 +327,10 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       }
 
       // snap to one of 18 orientations
-      float best_dot = 0;
+      real best_dot = 0;
       int best_o = 0;
       for (int o = 0; o < 9; o++) {
-        float dot = uu[o]*dx + vv[o]*dy;
+        real dot = uu[o]*dx + vv[o]*dy;
         if (dot > best_dot) {
           best_dot = dot;
           best_o = o;
@@ -338,10 +341,10 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       }
 
       // add to 4 histograms around pixel using linear interpolation
-      float yp = ((float)y+0.5)/(float)sbin - 0.5;
+      real yp = ((real)y+0.5)/(real)sbin - 0.5;
       int iyp = (int)floor(yp);
-      float vy0 = yp-iyp;
-      float vy1 = 1.0-vy0;
+      real vy0 = yp-iyp;
+      real vy1 = 1.0-vy0;
       v = sqrt(v);
 
       if (ixp >= 0 && iyp >= 0) {
@@ -368,10 +371,10 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
   // compute energy in each block by summing over orientations
   for (int o = 0; o < 9; o++) {
-    float *src1 = hist + o*blocks[0]*blocks[1];
-    float *src2 = hist + (o+9)*blocks[0]*blocks[1];
-    float *dst = norm;
-    float *end = norm + blocks[1]*blocks[0];
+    real *src1 = hist + o*blocks[0]*blocks[1];
+    real *src2 = hist + (o+9)*blocks[0]*blocks[1];
+    real *dst = norm;
+    real *end = norm + blocks[1]*blocks[0];
     while (dst < end) {
       *(dst++) += (*src1 + *src2) * (*src1 + *src2);
       src1++;
@@ -382,8 +385,8 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
   // compute features
   for (int x = 0; x < out[1]; x++) {
     for (int y = 0; y < out[0]; y++) {
-      float *dst = feat + x*out[0] + y;      
-      float *src, *p, n1, n2, n3, n4;
+      real *dst = feat + x*out[0] + y;      
+      real *src, *p, n1, n2, n3, n4;
 
       p = norm + (x+1)*blocks[0] + y+1;
       n1 = 1.0 / sqrt(*p + *(p+1) + *(p+blocks[0]) + *(p+blocks[0]+1) + eps);
@@ -394,18 +397,18 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       p = norm + x*blocks[0] + y;      
       n4 = 1.0 / sqrt(*p + *(p+1) + *(p+blocks[0]) + *(p+blocks[0]+1) + eps);
 
-      float t1 = 0;
-      float t2 = 0;
-      float t3 = 0;
-      float t4 = 0;
+      real t1 = 0;
+      real t2 = 0;
+      real t3 = 0;
+      real t4 = 0;
 
       // contrast-sensitive features
       src = hist + (x+1)*blocks[0] + (y+1);
       for (int o = 0; o < 18; o++) {
-        float h1 = min(*src * n1, 0.2);
-        float h2 = min(*src * n2, 0.2);
-        float h3 = min(*src * n3, 0.2);
-        float h4 = min(*src * n4, 0.2);
+        real h1 = min(*src * n1, 0.2);
+        real h2 = min(*src * n2, 0.2);
+        real h3 = min(*src * n3, 0.2);
+        real h4 = min(*src * n4, 0.2);
         *dst = 0.5 * (h1 + h2 + h3 + h4);
         t1 += h1;
         t2 += h2;
@@ -418,11 +421,11 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       // contrast-insensitive features
       src = hist + (x+1)*blocks[0] + (y+1);
       for (int o = 0; o < 9; o++) {
-        float sum = *src + *(src + 9*blocks[0]*blocks[1]);
-        float h1 = min(sum * n1, 0.2);
-        float h2 = min(sum * n2, 0.2);
-        float h3 = min(sum * n3, 0.2);
-        float h4 = min(sum * n4, 0.2);
+        real sum = *src + *(src + 9*blocks[0]*blocks[1]);
+        real h1 = min(sum * n1, 0.2);
+        real h2 = min(sum * n2, 0.2);
+        real h3 = min(sum * n3, 0.2);
+        real h4 = min(sum * n4, 0.2);
         *dst = 0.5 * (h1 + h2 + h3 + h4);
         dst += out[0]*out[1];
         src += blocks[0]*blocks[1];
@@ -446,7 +449,7 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
 // matlab entry point
 // F = features_pedro(image, bin)
-// image should be color with float values
+// image should be color with real values
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) { 
   if (nrhs != 2)
     mexErrMsgTxt("Wrong number of inputs"); 

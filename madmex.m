@@ -21,6 +21,7 @@ end
 time2 = cputime-t;
 
 
+I = im2double(I1);
 t = cputime;
 for j=1:ITERATIONS,
   mmex = features_madmex(I, 8);

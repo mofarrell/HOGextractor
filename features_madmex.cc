@@ -7,8 +7,22 @@
 // small value, used to avoid division by zero
 #define eps 0.0001
 
+#define DEBUG
+#ifdef DEBUG
+#undef NDEBUG
+#include <assert.h>
+#define ASSERT(b) assert((b))
+#define dbg_printf(...) printf(__VA_ARGS__)
+#else
+#define ASSERT(b) (void)(b);
+#define dbg_printf(...) do {} while (0);
+#endif  // DEBUG
+
 static const __m128 SIGNMASK = 
                _mm_castsi128_ps(_mm_set1_epi32(0x80000000));
+static const __m128 point5 = _mm_set_ps1(0.5f);
+static const __m128 one = _mm_set_ps1(1.0f);
+static const __m128 v0123 = _mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f);
 
 // unit vectors used to compute gradient orientation
 float uu[9] = {1.0000, 
@@ -51,8 +65,8 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
   // memory for caching orientation histograms & their norms
   int blocks[2];
-  blocks[0] = (int)round((double)dims[0]/(double)sbin);
-  blocks[1] = (int)round((double)dims[1]/(double)sbin);
+  blocks[0] = (int)round((float)dims[0]/(float)sbin);
+  blocks[1] = (int)round((float)dims[1]/(float)sbin);
   float *hist = (float *)mxCalloc(blocks[0]*blocks[1]*18, sizeof(float));
   float *norm = (float *)mxCalloc(blocks[0]*blocks[1], sizeof(float));
 
@@ -69,19 +83,18 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
   visible[1] = blocks[1]*sbin;
 
   // Vectorized loop
-  /*int a0123[4] = {0, 1, 2, 3};
-  __m128i v0123 = _mm_loads_i128((__m128i *) a0123);
-      __m128i vy = _mm_set1_epi32(y);
-      __m128i vys = _mm_add_epi32(v0123, y);
-
-      __m128i vN = _mm_set1_epi32(visible[0]-1);  // visible[0] - 1
-      __m128i vd0m2 = _mm_set1_epi32(dims[0]-2);  // dims[0] - 2
-      if (y > dims[0])
-
-      __128 s = _mm_load(im + min(x, dims[1]-2*dim[0]) + );*/
+  const __m128 vsbin = _mm_set_ps1((float)sbin);
+  int ystop = (dims[0]-2) - ((dims[0]-2)-1) % 4;
+  ASSERT(ystop <= visible[0]-1);  // The rest is done sequentially
+  ASSERT((ystop - 1) % 4 == 0);  // Must be a multiple of 4 for SSE instructions
+  dbg_printf("ystop  diff to visible[0]-1 %d\n", (visible[0]-1)-ystop);
   for (int x = 1; x < visible[1]-1; x++) {
-    int ystop = (dims[0]-2) - ((dims[0]-2)-1) % 4;
+    float xp = ((float)x+0.5)/(float)sbin - 0.5;
+    int ixp = (int)floor(xp);
+    float vx0 = xp-ixp;
+    float vx1 = 1.0-vx0;
     for (int y = 1; y < ystop; y += 4) {
+      ASSERT(y+3 <= dims[0]-2);  // Make sure we don't access anything bad
       // compute gradient fist color channel (RED)
       // Code replaced:
       // float *s = im + min(x, dims[1]-2)*dims[0] + min(y, dims[0]-2);
@@ -217,45 +230,65 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       }
 
 
-      int best_os[4];
-      _mm_store_si128((__m128i *)best_os, best_o);
-      float vs [4];
-      // Replaced code:
-      //  v = sqrt(v);
+      // Update histograms
+      // Replaced code:  Some code outside inner loop
+      // float xp = ((float)x+0.5)/(float)sbin - 0.5;
+      // float yp = ((float)y+0.5)/(float)sbin - 0.5;
+      // int ixp = (int)floor(xp);
+      // int iyp = (int)floor(yp);
+      // float vx0 = xp-ixp;
+      // float vy0 = yp-iyp;
+      // float vx1 = 1.0-vx0;
+      // float vy1 = 1.0-vy0;
+      // v = sqrt(v);
+      __m128 vy = _mm_set_ps1((float)y);
+      vy = _mm_add_ps(vy, v0123);
+      __m128 yp = _mm_add_ps(vy, point5);
+      yp = _mm_div_ps(yp, vsbin);
+      yp = _mm_sub_ps(yp, point5);
+      __m128 fyp = _mm_floor_ps(yp);
+      __m128i iyp = _mm_cvtps_epi32(fyp);
+      __m128 vy0 = _mm_sub_ps(yp, fyp);
+      __m128 vy1 = _mm_sub_ps(one, vy0);
       v = _mm_sqrt_ps(v);
-      _mm_store_ps(vs, v);
 
-      // Sequentially update histograms
+      float vs[4];
+      _mm_storeu_ps(vs, v);
+
+      int best_os[4];
+      _mm_storeu_si128((__m128i *)best_os, best_o);
+
+      int iyps[4];
+      _mm_storeu_si128((__m128i *)iyps, iyp);
+      
+      float vy0s[4];
+      _mm_storeu_ps(vy0s, vy0);
+      
+      float vy1s[4];
+      _mm_storeu_ps(vy1s, vy1);
+
+      // Finish updating histograms sequentially.  This is a scatter.
       for (int yoff = 0; yoff < 4; yoff ++) {
         // add to 4 histograms around pixel using linear interpolation
-        float xp = ((float)x+0.5)/(float)sbin - 0.5;
-        float yp = ((float)(y + yoff)+0.5)/(float)sbin - 0.5;
-        int ixp = (int)floor(xp);
-        int iyp = (int)floor(yp);
-        float vx0 = xp-ixp;
-        float vy0 = yp-iyp;
-        float vx1 = 1.0-vx0;
-        float vy1 = 1.0-vy0;
 
-
-        if (ixp >= 0 && iyp >= 0) {
-          *(hist + ixp*blocks[0] + iyp + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx1*vy1*(vs[yoff]);
+        if (ixp >= 0 && iyps[yoff] >= 0) {
+          *(hist + ixp*blocks[0] + iyps[yoff] + (best_os[yoff])*blocks[0]*blocks[1]) += 
+            vx1*vy1s[yoff]*(vs[yoff]);
         }
 
-        if (ixp+1 < blocks[1] && iyp >= 0) {
-          *(hist + (ixp+1)*blocks[0] + iyp + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx0*vy1*(vs[yoff]);
+        if (ixp+1 < blocks[1] && iyps[yoff] >= 0) {
+          *(hist + (ixp+1)*blocks[0] + iyps[yoff] + (best_os[yoff])*blocks[0]*blocks[1]) += 
+            vx0*vy1s[yoff]*(vs[yoff]);
         }
 
-        if (ixp >= 0 && iyp+1 < blocks[0]) {
-          *(hist + ixp*blocks[0] + (iyp+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx1*vy0*(vs[yoff]);
+        if (ixp >= 0 && iyps[yoff]+1 < blocks[0]) {
+          *(hist + ixp*blocks[0] + (iyps[yoff]+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
+            vx1*vy0s[yoff]*(vs[yoff]);
         }
 
-        if (ixp+1 < blocks[1] && iyp+1 < blocks[0]) {
-          *(hist + (ixp+1)*blocks[0] + (iyp+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
-            vx0*vy0*(vs[yoff]);
+        if (ixp+1 < blocks[1] && iyps[yoff]+1 < blocks[0]) {
+          *(hist + (ixp+1)*blocks[0] + (iyps[yoff]+1) + (best_os[yoff])*blocks[0]*blocks[1]) += 
+            vx0*vy0s[yoff]*(vs[yoff]);
         }
       }
     }
@@ -305,13 +338,9 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       }
 
       // add to 4 histograms around pixel using linear interpolation
-      float xp = ((double)x+0.5)/(double)sbin - 0.5;
-      float yp = ((double)y+0.5)/(double)sbin - 0.5;
-      int ixp = (int)floor(xp);
+      float yp = ((float)y+0.5)/(float)sbin - 0.5;
       int iyp = (int)floor(yp);
-      float vx0 = xp-ixp;
       float vy0 = yp-iyp;
-      float vx1 = 1.0-vx0;
       float vy1 = 1.0-vy0;
       v = sqrt(v);
 

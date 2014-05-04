@@ -1,7 +1,9 @@
 
 
 CXXFLAGS=-msse4.1
-OBJS=features_pedro.mexa64 features_madmex.mexa64
+OBJS=features_pedro.mexa64 \
+     features_pedro_float.mexa64 \
+     features_madmex.mexa64
 
 
 all:	$(OBJS)

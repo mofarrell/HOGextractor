@@ -35,6 +35,7 @@ typedef __m128 vmask;
 #define sub_vreal(v1, v2) _mm_sub_ps((v1), (v2))
 #define mul_vreal(v1, v2) _mm_mul_ps((v1), (v2))
 #define div_vreal(v1, v2) _mm_div_ps((v1), (v2))
+#define min_vreal(v1, v2) _mm_min_ps((v1), (v2))
 #define floor_vreal(v) _mm_floor_ps((v))
 #define sqrt_vreal(v) _mm_sqrt_ps((v))
 #define or_vreal(v1, v2) _mm_or_ps((v1), (v2))
@@ -51,7 +52,7 @@ typedef __m128 vmask;
 // Natural operations
 #define set_nat(v) _mm_set1_epi32((v))
 #define set_vnat(v0, v1, v2, v3) _mm_set_epi32((v3), (v2), (v1), (v0))
-#define load_vnat(p) _mm_loadu_si128((p))
+#define load_vnat(p) _mm_loadu_si128((vnat *)(p))
 #define store_vnat(p, v) _mm_storeu_si128((vnat *)(p), (v))
 #define add_vnat(v1, v2) _mm_add_epi32((v1), (v2))
 #define sub_vnat(v1, v2) _mm_sub_epi32((v1), (v2))
@@ -92,6 +93,7 @@ typedef __m128d vmask;
 #define sub_vreal(v1, v2) _mm_sub_pd((v1), (v2))
 #define mul_vreal(v1, v2) _mm_mul_pd((v1), (v2))
 #define div_vreal(v1, v2) _mm_div_pd((v1), (v2))
+#define min_vreal(v1, v2) _mm_min_pd((v1), (v2))
 #define floor_vreal(v) _mm_floor_pd((v))
 #define sqrt_vreal(v) _mm_sqrt_pd((v))
 #define or_vreal(v1, v2) _mm_or_pd((v1), (v2))
@@ -108,7 +110,7 @@ typedef __m128d vmask;
 // Natural operations
 #define set_nat(v) _mm_set1_epi64((__m64)(nat)(v))
 #define set_vnat(v0, v1) _mm_set_epi64((__m64)(nat)(v1), (__m64)(nat)(v0))
-#define load_vnat(p) _mm_loadu_si128((__m64 *)(p))
+#define load_vnat(p) _mm_loadu_si128((vnat *)(p))
 #define store_vnat(p, v) _mm_storeu_si128((vnat *)(p), (v))
 #define add_vnat(v1, v2) _mm_add_epi64((v1), (v2))
 #define sub_vnat(v1, v2) _mm_sub_epi64((v1), (v2))
@@ -128,6 +130,10 @@ const vnat SIMD_WIDTH_IDX_NAT = set_vnat(0L, 1L);
 #else
 // Include AVX headers
 #include "immintrin.h"
+
+#ifndef __AVX__
+#error AVX not defined
+#endif
 
 #ifndef DOUBLE
 ////////////////////////////
@@ -190,68 +196,63 @@ const vreal SIMD_WIDTH_IDX_REAL = set_vreal(0.0f, 1.0f, 2.0f, 3.0f,
 const vnat SIMD_WIDTH_IDX_NAT = set_vnat(0, 1, 2, 3, 4, 5, 6, 7);
 
 #else
-////////////////////////////
-// AVX with DOUBLE PRECISION
-////////////////////////////
-#define SIMD_WIDTH 2
-
-// Typedefs
-typedef __m128d vreal;
-typedef double real;
-#define mxCLASS mxDOUBLE_CLASS
-typedef __m128i vnat;
-typedef long nat;
-
-typedef __m128d vmask;
-
-// Real operations
-#define set_real(v) _mm256_set_pd1((v))
-#define set_vreal(v0, v1, v2, v3) _mm256_set_pd((v3), (v2), (v1), (v0))
-#define load_real(p) _mm256_load_pd1((p))
-#define load_vreal(p) _mm256_loadu_pd((p))
-#define store_vreal(p, v) _mm256_storeu_pd((p), (v))
-#define add_vreal(v1, v2) _mm256_add_pd((v1), (v2))
-#define sub_vreal(v1, v2) _mm256_sub_pd((v1), (v2))
-#define mul_vreal(v1, v2) _mm256_mul_pd((v1), (v2))
-#define div_vreal(v1, v2) _mm256_div_pd((v1), (v2))
-#define floor_vreal(v) _mm256_floor_pd((v))
-#define sqrt_vreal(v) _mm256_sqrt_pd((v))
-#define or_vreal(v1, v2) _mm256_or_pd((v1), (v2))
-#define and_vreal(m, v) _mm256_and_pd((m), (v))
-#define andnot_vreal(m, v) _mm256_andnot_pd((m), (v))
-#define cmpgt_vreal(v1, v2) _mm256_cmpgt_pd((v1), (v2))
-
-// Type casts and conversion
-#define vnat_to_vreal(v) _mm256_castsi256_pd((v))
-#define vreal_to_vnat(v) _mm256_castpd_si256((v))
-#define vnat_convertto_vreal(v) _mm256_cvtepi32_pd(_mm256_cvtepi64_epi32((v)))
-#define vreal_convertto_vnat(v) _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32((v)))
-
-// Natural operations
-#define set_nat(v) _mm256_set1_epi64x((__m64)(nat)(v))
-#define set_vnat(v0, v1, v2, v3) \
-    _mm256_set_epi64((__m64)(nat)(v3), (__m64)(nat)(v2), \
-                     (__m64)(nat)(v1), (__m64)(nat)(v0))
-#define load_vnat(p) _mm256_loadu_si256((__m64 *)(p))
-#define store_vnat(p, v) _mm256_storeu_si256((vnat *)(p), (v))
-#define add_vnat(v1, v2) _mm256_add_epi64((v1), (v2))
-#define sub_vnat(v1, v2) _mm256_sub_epi64((v1), (v2))
-#define mul_vnat(v1, v2) _mm256_mul_epi64((v1), (v2))
-#define div_vnat(v1, v2) _mm_div_epi64((v1), (v2))
-#define or_vnat(v1, v2) _mm256_or_si256((v1), (v2))
-#define and_vnat(m, v) _mm256_and_si256(vreal_to_vnat((m)), (v))
-#define andnot_vnat(m, v) _mm256_andnot_si256(vreal_to_vnat((m)), (v))
-
-// Constants
-const vreal SIGNMASK = vnat_to_vreal(set_nat(0x8000000000000000L));
-#define neg_vreal(v) _mm256_xor_pd((v), (SIGNMASK))
+//////////////////////////// 
+// AVX with DOUBLE PRECISION 
+//////////////////////////// 
+#define SIMD_WIDTH 4 
+ 
+// Typedefs 
+typedef __m256d vreal; 
+typedef double real; 
+#define mxCLASS mxDOUBLE_CLASS 
+typedef __m128i vnat; 
+typedef int nat; 
+ 
+typedef __m256d vmask; 
+ 
+// Real operations 
+#define set_real(v) _mm256_set1_pd((v)) 
+#define set_vreal(v0, v1, v2, v3) _mm256_set_pd((v3), (v2), (v1), (v0)) 
+#define load_real(p) _mm256_broadcast_sd((p)) 
+#define load_vreal(p) _mm256_loadu_pd((p)) 
+#define store_vreal(p, v) _mm256_storeu_pd((p), (v)) 
+#define add_vreal(v1, v2) _mm256_add_pd((v1), (v2)) 
+#define sub_vreal(v1, v2) _mm256_sub_pd((v1), (v2)) 
+#define mul_vreal(v1, v2) _mm256_mul_pd((v1), (v2)) 
+#define div_vreal(v1, v2) _mm256_div_pd((v1), (v2)) 
+#define floor_vreal(v) _mm256_floor_pd((v)) 
+#define sqrt_vreal(v) _mm256_sqrt_pd((v)) 
+#define or_vreal(v1, v2) _mm256_or_pd((v1), (v2)) 
+#define and_vreal(m, v) _mm256_and_pd((m), (v)) 
+#define andnot_vreal(m, v) _mm256_andnot_pd((m), (v)) 
+#define _CMP_GT_OS 0x0e 
+#define cmpgt_vreal(v1, v2) _mm256_cmp_pd((v1), (v2), _CMP_GT_OS) // may be a problem 
+ 
+// Type casts and conversion 
+#define vnat_to_vreal(v) _mm256_cvtepi32_pd((v)) 
+#define vreal_to_vnat(v) _mm256_cvtpd_epi32((v)) 
+#define vnat_convertto_vreal(v) _mm256_cvtepi32_pd((v)) 
+#define vreal_convertto_vnat(v) _mm256_cvtpd_epi32((v)) 
+ 
+// Natural operations 
+#define set_nat(v) _mm_set1_epi32((v)) 
+#define set_vnat(v0, v1, v2, v3) _mm_set_epi32((v3), (v2), (v1), (v0)) 
+#define load_vnat(p) _mm_loadu_si128((p)) 
+#define store_vnat(p, v) _mm_storeu_si128((vnat *)(p), (v)) 
+#define add_vnat(v1, v2) _mm_add_epi32((v1), (v2)) 
+#define sub_vnat(v1, v2) _mm_sub_epi32((v1), (v2)) 
+#define mul_vnat(v1, v2) _mm_mullo_epi32((v1), (v2)) 
+#define or_vnat(v1, v2) _mm_or_si128((v1), (v2)) 
+#define and_vnat(m, v) _mm_and_si128(vreal_to_vnat((m)), (v)) 
+#define andnot_vnat(m, v) _mm_andnot_si128(vreal_to_vnat((m)), (v)) 
+ 
+// Constants 
+const vreal SIGNMASK = vnat_to_vreal(set_nat(0x80000000)); 
+#define neg_vreal(v) _mm256_xor_pd((v), (SIGNMASK)) 
 const vreal SIMD_WIDTH_IDX_REAL = set_vreal(0.0, 1.0, 2.0, 3.0);
-const vnat SIMD_WIDTH_IDX_NAT = set_vnat(0L, 1L, 2L, 3L);
+const vnat SIMD_WIDTH_IDX_NAT = set_vnat(0, 1, 2, 3);
 
 #endif
 #endif
-
-
-
 
 

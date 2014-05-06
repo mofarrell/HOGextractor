@@ -10,7 +10,6 @@
 // small value, used to avoid division by zero
 #define eps 0.0001
 
-#define DEBUG
 #ifdef DEBUG
 #undef NDEBUG
 #include <assert.h>

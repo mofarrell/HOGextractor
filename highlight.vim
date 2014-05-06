@@ -14,6 +14,7 @@ syn keyword Special sub_vreal
 syn keyword Special mul_vreal
 syn keyword Special div_vreal
 syn keyword Special sqrt_vreal
+syn keyword Special min_vreal
 syn keyword Special or_vreal
 syn keyword Special and_vreal
 syn keyword Special andnot_vreal

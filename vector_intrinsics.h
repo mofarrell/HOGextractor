@@ -220,6 +220,7 @@ typedef __m256d vmask;
 #define sub_vreal(v1, v2) _mm256_sub_pd((v1), (v2)) 
 #define mul_vreal(v1, v2) _mm256_mul_pd((v1), (v2)) 
 #define div_vreal(v1, v2) _mm256_div_pd((v1), (v2)) 
+#define min_vreal(v1, v2) _mm256_min_pd((v1), (v2))
 #define floor_vreal(v) _mm256_floor_pd((v)) 
 #define sqrt_vreal(v) _mm256_sqrt_pd((v)) 
 #define or_vreal(v1, v2) _mm256_or_pd((v1), (v2)) 

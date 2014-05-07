@@ -237,7 +237,7 @@ typedef __m256d vmask;
 // Natural operations 
 #define set_nat(v) _mm_set1_epi32((v)) 
 #define set_vnat(v0, v1, v2, v3) _mm_set_epi32((v3), (v2), (v1), (v0)) 
-#define load_vnat(p) _mm_loadu_si128((p)) 
+#define load_vnat(p) _mm_loadu_si128((vnat *)(p)) 
 #define store_vnat(p, v) _mm_storeu_si128((vnat *)(p), (v)) 
 #define add_vnat(v1, v2) _mm_add_epi32((v1), (v2)) 
 #define sub_vnat(v1, v2) _mm_sub_epi32((v1), (v2)) 

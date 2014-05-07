@@ -231,7 +231,7 @@ typedef __m256d vmask;
  
 // Type casts and conversion 
 #define vnat_to_vreal(v) _mm256_cvtepi32_pd((v)) 
-#define vreal_to_vnat(v) _mm256_cvtpd_epi32((v)) 
+#define vreal_to_vnat(v) _mm256_castsi256_si128(_mm256_castpd_si256((v)))//_mm256_cvtpd_epi32((v)) 
 #define vnat_convertto_vreal(v) _mm256_cvtepi32_pd((v)) 
 #define vreal_convertto_vnat(v) _mm256_cvtpd_epi32((v)) 
  

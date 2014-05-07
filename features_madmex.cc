@@ -20,9 +20,14 @@
 #define dbg_printf(...) do {} while (0);
 #endif  // DEBUG
 
+
+static const vreal veps = set_real(eps);
 static const vreal point5 = set_real(0.5f);
+static const vreal point2 = set_real(0.2f);
+static const vreal point2357 = set_real(0.2357f);
 static const vreal one = set_real(1.0f);
 static const vnat one_nat = set_nat(1);
+
 
 // unit vectors used to compute gradient orientation
 real uu[9] = {1.0000, 
@@ -393,9 +398,19 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
   // compute energy in each block by summing over orientations
   for (int o = 0; o < 9; o++) {
     real *src1 = hist + o*blocks[0]*blocks[1];
-    real *src2 = hist + (o+9)*blocks[0]*blocks[1];
+    real *src2 = src1 + 9*blocks[0]*blocks[1];
     real *dst = norm;
     real *end = norm + blocks[1]*blocks[0];
+    real *endstop = dst + (end - dst) % SIMD_WIDTH;
+    while (dst < endstop) {
+      vreal vsrc1 = load_vreal(src1);
+      vreal vsrc2 = load_vreal(src2);
+      vsrc1 = add_vreal(vsrc1, vsrc2);
+      store_vreal(dst, mul_vreal(vsrc1, vsrc1));
+      dst += SIMD_WIDTH;
+      src1 += SIMD_WIDTH;
+      src2 += SIMD_WIDTH;
+    }
     while (dst < end) {
       *(dst++) += (*src1 + *src2) * (*src1 + *src2);
       src1++;
@@ -405,7 +420,118 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
   // compute features
   for (int x = 0; x < out[1]; x++) {
-    for (int y = 0; y < out[0]; y++) {
+    int ystop = out[0] - (out[0] % SIMD_WIDTH);
+    for (int y = 0; y < ystop; y+=SIMD_WIDTH) {
+      real *dst = feat + x*out[0] + y;      
+      real *src, *p;
+      vreal vdst, vsrc, vp, vp1, vpblocks0, vpblocks0p1;
+      vreal n1, n2, n3, n4;
+
+      p = norm + (x+1)*blocks[0] + y+1;
+      vp = load_vreal(p);
+      vp1 = load_vreal(p+1);
+      vpblocks0 = load_vreal(p + blocks[0]);
+      vpblocks0p1 = load_vreal(p + blocks[0] + 1);
+      n1 = add_vreal(vp, vp1);
+      n1 = add_vreal(n1, vpblocks0);
+      n1 = add_vreal(n1, vpblocks0p1);
+      n1 = add_vreal(n1, veps);
+      n1 = sqrt_vreal(n1);
+      n1 = div_vreal(one, n1);
+
+      p = norm + (x+1)*blocks[0] + y;
+      vp = load_vreal(p);
+      vp1 = load_vreal(p+1);
+      vpblocks0 = load_vreal(p + blocks[0]);
+      vpblocks0p1 = load_vreal(p + blocks[0] + 1);
+      n2 = add_vreal(vp, vp1);
+      n2 = add_vreal(n2, vpblocks0);
+      n2 = add_vreal(n2, vpblocks0p1);
+      n2 = add_vreal(n2, veps);
+      n2 = sqrt_vreal(n2);
+      n2 = div_vreal(one, n2);
+      
+      p = norm + x*blocks[0] + y+1;
+      vp = load_vreal(p);
+      vp1 = load_vreal(p+1);
+      vpblocks0 = load_vreal(p + blocks[0]);
+      vpblocks0p1 = load_vreal(p + blocks[0] + 1);
+      n3 = add_vreal(vp, vp1);
+      n3 = add_vreal(n3, vpblocks0);
+      n3 = add_vreal(n3, vpblocks0p1);
+      n3 = add_vreal(n3, veps);
+      n3 = sqrt_vreal(n3);
+      n3 = div_vreal(one, n3);
+
+      p = norm + x*blocks[0] + y;      
+      vp = load_vreal(p);
+      vp1 = load_vreal(p+1);
+      vpblocks0 = load_vreal(p + blocks[0]);
+      vpblocks0p1 = load_vreal(p + blocks[0] + 1);
+      n4 = add_vreal(vp, vp1);
+      n4 = add_vreal(n4, vpblocks0);
+      n4 = add_vreal(n4, vpblocks0p1);
+      n4 = add_vreal(n4, veps);
+      n4 = sqrt_vreal(n4);
+      n4 = div_vreal(one, n4);
+
+      vreal t1 = set_real(0);
+      vreal t2 = set_real(0);
+      vreal t3 = set_real(0);
+      vreal t4 = set_real(0);
+
+      // contrast-sensitive features
+      src = hist + (x+1)*blocks[0] + (y+1);
+      for (int o = 0; o < 18; o++) {
+        vsrc = load_vreal(src);
+        vreal h1 = min_vreal(mul_vreal(vsrc, n1), point2);
+        vreal h2 = min_vreal(mul_vreal(vsrc, n2), point2);
+        vreal h3 = min_vreal(mul_vreal(vsrc, n3), point2);
+        vreal h4 = min_vreal(mul_vreal(vsrc, n4), point2);
+        vdst = mul_vreal(point5, add_vreal(add_vreal(h1, h2),
+                                           add_vreal(h3, h4)));
+        store_vreal(dst, vdst);
+        t1 = add_vreal(t1, h1);
+        t2 = add_vreal(t2, h2);
+        t3 = add_vreal(t3, h3);
+        t4 = add_vreal(t4, h4);
+        dst += out[0]*out[1];
+        src += blocks[0]*blocks[1];
+      }
+
+      // contrast-insensitive features
+      src = hist + (x+1)*blocks[0] + (y+1);
+      for (int o = 0; o < 9; o++) {
+        vsrc = load_vreal(src + 9*blocks[0]*blocks[1]);
+        vsrc = add_vreal(vsrc, load_vreal(src));
+        vreal h1 = min_vreal(mul_vreal(vsrc, n1), point2);
+        vreal h2 = min_vreal(mul_vreal(vsrc, n2), point2);
+        vreal h3 = min_vreal(mul_vreal(vsrc, n3), point2);
+        vreal h4 = min_vreal(mul_vreal(vsrc, n4), point2);
+        vdst = mul_vreal(point5, add_vreal(add_vreal(h1, h2),
+                                           add_vreal(h3, h4)));
+        store_vreal(dst, vdst);
+        dst += out[0]*out[1];
+        src += blocks[0]*blocks[1];
+      }
+
+      // texture features
+      vdst = mul_vreal(point2357, t1);
+      store_vreal(dst, vdst);
+      dst += out[0]*out[1];
+      vdst = mul_vreal(point2357, t2);
+      store_vreal(dst, vdst);
+      dst += out[0]*out[1];
+      vdst = mul_vreal(point2357, t3);
+      store_vreal(dst, vdst);
+      dst += out[0]*out[1];
+      vdst = mul_vreal(point2357, t4);
+      store_vreal(dst, vdst);
+    }
+    ///////////////////////////////////
+    // Continue sequentially after SIMD
+    ///////////////////////////////////
+    for (int y = ystop; y < out[0]; y++) {
       real *dst = feat + x*out[0] + y;      
       real *src, *p, n1, n2, n3, n4;
 

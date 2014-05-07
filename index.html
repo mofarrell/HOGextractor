@@ -1,0 +1,75 @@
+<html>
+<head>
+<script src="hog.js"></script>
+</head>
+<body>
+<video autoplay style="display:none;"></video>
+
+<script>
+  var errorCallback = function(e) {
+    console.log('Reeeejected!', e);
+  };
+
+navigator.getUserMedia  = navigator.getUserMedia ||
+                          navigator.webkitGetUserMedia ||
+                          navigator.mozGetUserMedia ||
+                          navigator.msGetUserMedia;
+
+var video = document.querySelector('video');
+var width;
+var height;
+function timerCallback(vid){
+    if (video.paused || video.ended) {
+      return;
+    }
+    computeFrame(vid);
+    setTimeout(function () {
+        timerCallback(vid);
+      }, 0);
+}
+computed = false;
+var computeFrame = function(vid) {
+    c1 = document.getElementById("c1");
+    ctx1 = c1.getContext("2d");
+    c2 = document.getElementById("c2");
+    ctx2 = c2.getContext("2d");
+    c3 = document.getElementById("c3");
+    ctx3 = c3.getContext("2d");
+    ctx1.drawImage(video, 0, 0, width, height);
+    var frame = ctx1.getImageData(0, 0, width, height);
+    var l = frame.data.length / 4;
+    if (!computed) {
+      hog(width, height, 8, frame, ctx3);
+      //computed = true;
+    }
+    for (var i = 0; i < l; i++) {
+      frame.data[i * 4 + 0] = 10;
+      frame.data[i * 4 + 1] = 10;
+      frame.data[i * 4 + 2] = 10;
+      //if (g < 50 && r < 50 && b < 50)
+      //  frame.data[i * 4 + 3] = 0;
+    }
+    ctx2.putImageData(frame, 0, 0);
+    return;
+  }
+
+if (navigator.getUserMedia) {
+  navigator.getUserMedia({audio: true, video: true}, function(stream) {
+    video.src = window.URL.createObjectURL(stream);
+    video.addEventListener("play", function() {
+        width = video.videoWidth / 2;
+        height = video.videoHeight / 2;
+        timerCallback(this);
+
+      }, false);
+  }, errorCallback);
+} else {
+  video.src = 'somevideo.webm'; // fallback.
+}
+
+</script>
+<canvas id="c1" width="1080" height="720" style="display:none;"></canvas>
+<canvas id="c2" width="1080" height="720"></canvas>
+<canvas id="c3" width="1080" height="720"></canvas>
+</body>
+</html>

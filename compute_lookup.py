@@ -1,4 +1,4 @@
-
+import sys
 
 # unit vectors used to compute gradient orientation
 uu = [1.0000, 
@@ -42,12 +42,19 @@ def get_best_o(size):
     ans.append(row)
   return ans
 
-def gen_header(filename):
-  size = 1023
+def gen_header():
+  if (len(sys.argv) < 3):
+    print "Usage: python compute_lookup.py [size] [filename]"
+    exit()
+  size = int(sys.argv[1])-1
+  filename = sys.argv[2]
+  print "Generating lookup table of size", str(size)
   with open(filename, "wb") as f:
     f.write("// Generated orientation lookup table\n\n")
+
+    f.write("#define LOOKUP_SIZE %d\n\n" % (size/2))
     
-    f.write("static const int best_o_lookup[%d][%d] = {\n" % (size, size))
+    f.write("static const char best_o_lookup[%d][%d] = {\n" % (size, size))
 
     for c in get_best_o(size):
       f.write("\t{\n")
@@ -56,9 +63,7 @@ def gen_header(filename):
       f.write("\t},\n")
     f.write("};\n")
 
-gen_header("best_o_lookup.h")
-
-
+gen_header()
 
 
 

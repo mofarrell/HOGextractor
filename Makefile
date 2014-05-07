@@ -1,6 +1,6 @@
 
 
-CXXFLAGS=-msse4.1 -std=c++0x -O3 -funroll-all-loops #-DDOUBLE#-DAVX -DDOUBLE -DDEBUG
+CXXFLAGS=-msse4.1 -std=c++0x -O2 -funroll-all-loops #-march=native #-DDOUBLE#-DAVX -DDOUBLE -DDEBUG
 OBJS=features_pedro.mexa64 \
      features_pedro_single.mexa64 \
      features_madmex.mexa64 \
@@ -11,7 +11,7 @@ OBJS=features_pedro.mexa64 \
 all:	$(OBJS)
 
 run:	$(OBJS)
-	matlab -nodisplay -nosplash -nodesktop -r "type=1;run('madmex.m');"
+	matlab -nojvm -nodisplay -nosplash -nodesktop -r "type=1;run('madmex.m');"
 
 %.mexa64:	%.cc	vector_intrinsics.h	best_o_lookup.h Makefile
 	mex CXXFLAGS='$$CXXFLAGS $(CXXFLAGS)' $<

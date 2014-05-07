@@ -10,7 +10,7 @@
 // small value, used to avoid division by zero
 #define eps 0.0001
 //size of lookup table
-#define LOOKUP_SIZE  511
+#include "best_o_lookup.h"
 
 #ifdef DEBUG
 #undef NDEBUG
@@ -51,7 +51,6 @@ real vv[9] = {0.0000,
   0.6428, 
   0.3420};
 
-#include "best_o_lookup.h"
 
 static inline real min(real x, real y) { return (x <= y ? x : y); }
 static inline real max(real x, real y) { return (x <= y ? y : x); }
@@ -259,7 +258,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       store_vnat(lookup_ys, lookup_y);
 
       nat best_os[SIMD_WIDTH];     
- 
       for (int i = 0; i < SIMD_WIDTH; i++) {
         best_os[i] = best_o_lookup[lookup_xs[i]][lookup_ys[i]];
       }
@@ -273,7 +271,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       // int ixp = (int)floor(xp);
       // int iyp = (int)floor(yp);
       // real vx0 = xp-ixp;
-      // real vy0 = yp-iyp;
       // real vx1 = 1.0-vx0;
       // real vy1 = 1.0-vy0;
       // v = sqrt(v);
@@ -376,11 +373,11 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       }
 
       // snap to one of 18 orientations using lookup
-      int lookup_x = (int)(511*dx)+511;
-      ASSERT(lookup_x >= 0 && lookup_x < 511);
-      int lookup_y = (int)(511*dy)+511;
-      ASSERT(lookup_y >= 0 && lookup_y < 1023);
-      int best_o = best_o_lookup[lookup_x][lookup_y];
+      int lookup_x = (int)(LOOKUP_SIZE*dx)+LOOKUP_SIZE;
+      ASSERT(lookup_x >= 0 && lookup_x < LOOKUP_SIZE*2);
+      int lookup_y = (int)(LOOKUP_SIZE*dy)+LOOKUP_SIZE;
+      ASSERT(lookup_y >= 0 && lookup_y < LOOKUP_SIZE*2);
+      int best_o = (int)best_o_lookup[lookup_x][lookup_y];
 
       // add to 4 histograms around pixel using linear interpolation
       real yp = ((real)y+0.5)/(real)sbin - 0.5;

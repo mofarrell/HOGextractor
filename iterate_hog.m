@@ -7,6 +7,7 @@ else
   imconv = @(x) im2double(x);
 end
 I = imconv(I2);
+%I = im2single(I2);
 t = cputime;
 for j=1:OCTAVES,
   for i=1:LPO,

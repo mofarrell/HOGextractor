@@ -1,7 +1,7 @@
-I1 = imread('sample2.jpg');
+I1 = imread('wine.jpg');
 
 OCTAVES = 1;
-LPO = 3;
+LPO = 1;
 ITERATIONS = 1;
 
 display(sprintf('==== LOADING STANDARD IMPLEMENTATIONS ====\n'));

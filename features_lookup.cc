@@ -6,16 +6,7 @@
 #include <math.h>
 #include "mex.h"
 
-#ifdef DEBUG
-#undef NDEBUG
-#include <assert.h>
-#define ASSERT(b) assert((b))
-#define dbg_printf(...) printf(__VA_ARGS__)
-#else
-#define ASSERT(b) (void)(b);
-#define dbg_printf(...) do {} while (0);
-#endif  // DEBUG
-
+#include "util.h"
 
 // small value, used to avoid division by zero
 #define eps 0.0001
@@ -128,7 +119,7 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       //}
 
       int lookup_x = (int)(511*dx)+511;
-      ASSERT(lookup_x >= 0 && lookup_x < 511);
+      ASSERT(lookup_x >= 0 && lookup_x < 1023);
       int lookup_y = (int)(511*dy)+511;
       ASSERT(lookup_y >= 0 && lookup_y < 1023);
       int best_o = best_o_lookup[lookup_x][lookup_y];

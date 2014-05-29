@@ -1,6 +1,6 @@
 
 
-CXXFLAGS=-msse4.1 -std=c++0x -O2 -funroll-all-loops #-march=native #-DDOUBLE#-DAVX -DDOUBLE -DDEBUG
+CXXFLAGS=-msse4.1 -std=c++0x -O2 -funroll-all-loops -DDEBUG #-DDOUBLE#-DDEBUG#-march=native #-DDOUBLE#-DAVX -DDOUBLE -DDEBUG
 OBJS=features_pedro.mexa64 \
      features_pedro_single.mexa64 \
      features_madmex.mexa64 \

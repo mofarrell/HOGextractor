@@ -7,20 +7,13 @@
 #include "vector_intrinsics.h"
 #include "mex.h"
 
+#include "util.h"
+
 // small value, used to avoid division by zero
 #define eps 0.0001
 //size of lookup table
 #include "best_o_lookup.h"
 
-#ifdef DEBUG
-#undef NDEBUG
-#include <assert.h>
-#define ASSERT(b) assert((b))
-#define dbg_printf(...) printf(__VA_ARGS__)
-#else
-#define ASSERT(b) (void)(b);
-#define dbg_printf(...) do {} while (0);
-#endif  // DEBUG
 
 static const vreal veps = set_real(eps);
 static const vreal point5 = set_real(0.5f);
@@ -95,10 +88,10 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
   // Vectorized loop
   const vreal vsbin = set_real((real)sbin);
-  int ystop = (dims[0]-2) - ((dims[0]-2)-1) % SIMD_WIDTH;
+  int ystop = (dims[0]-2-SIMD_WIDTH) - ((dims[0]-2-SIMD_WIDTH)-1) % SIMD_WIDTH;
+  dbg_printf("ystop  diff to visible[0]-1 %d\n", (visible[0]-1)-ystop);
   ASSERT(ystop <= visible[0]-1);  // The rest is done sequentially
   ASSERT((ystop - 1) % 4 == 0);  // Must be a multiple of 4 for SSE instructions
-  dbg_printf("ystop  diff to visible[0]-1 %d\n", (visible[0]-1)-ystop);
   for (int x = 1; x < visible[1]-1; x++) {
     real xp = ((real)x+0.5)/(real)sbin - 0.5;
     nat ixp = (nat)floor(xp);
@@ -118,7 +111,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       // real dx = *(s+dims[0]) - *(s-dims[0]);
       // real v = dx*dx + dy*dy;
       real *sp = im + min(x, dims[1]-2)*dims[0] + y;
-      vreal s = load_vreal(sp);
       
       vreal sp1 = load_vreal((sp + 1));
       vreal sm1 = load_vreal((sp - 1));
@@ -140,7 +132,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       // real dx2 = *(s+dims[0]) - *(s-dims[0]);
       // real v2 = dx2*dx2 + dy2*dy2;
       sp += dims[0]*dims[1];
-      s = load_vreal(sp);
       
       sp1 = load_vreal((sp + 1));
       sm1 = load_vreal((sp - 1));
@@ -162,7 +153,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       // real dx3 = *(s+dims[0]) - *(s-dims[0]);
       // real v3 = dx3*dx3 + dy3*dy3;
       sp += dims[0]*dims[1];
-      s = load_vreal(sp);
       
       sp1 = load_vreal((sp + 1));
       sm1 = load_vreal((sp - 1));
@@ -244,8 +234,6 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
       //  best_o = or_vnat(and_vnat(mask, vo),
       //                   andnot_vnat(mask, best_o));
       //}
-
-
       vnat lookup_x = vreal_convertto_vnat(mul_vreal(lookup_size, dx));
       lookup_x = add_vnat(lookup_x, lookup_size_nat);
 
@@ -259,11 +247,12 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
 
       nat best_os[SIMD_WIDTH];     
       for (int i = 0; i < SIMD_WIDTH; i++) {
+        ASSERT(lookup_xs[i] >= 0 && lookup_xs[i] < LOOKUP_SIZE*2+1);
+        ASSERT(lookup_ys[i] >= 0 && lookup_ys[i] < LOOKUP_SIZE*2+1);
         best_os[i] = best_o_lookup[lookup_xs[i]][lookup_ys[i]];
       }
 
       vnat best_o = load_vnat(best_os);
-
       // Update histograms
       // Replaced code:  Some code outside inner loop
       // real xp = ((real)x+0.5)/(real)sbin - 0.5;
@@ -325,18 +314,22 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
         // add to 4 histograms around pixel using linear interpolation
 
         if (ixp >= 0 && iyps[yoff] >= 0) {
+          ASSERT(histp[0][yoff] < blocks[0]*blocks[1]*18);
           *(hist + histp[0][yoff]) += valplus[0][yoff];
         }
 
         if (ixp+1 < blocks[1] && iyps[yoff] >= 0) {
+          ASSERT(histp[1][yoff] < blocks[0]*blocks[1]*18);
           *(hist + histp[1][yoff]) += valplus[1][yoff];
         }
 
         if (ixp >= 0 && iyps[yoff]+1 < blocks[0]) {
+          ASSERT(histp[2][yoff] < blocks[0]*blocks[1]*18);
           *(hist + histp[2][yoff]) += valplus[2][yoff];
         }
 
         if (ixp+1 < blocks[1] && iyps[yoff]+1 < blocks[0]) {
+          ASSERT(histp[3][yoff] < blocks[0]*blocks[1]*18);
           *(hist + histp[3][yoff]) += valplus[3][yoff];
         }
       }
@@ -372,11 +365,13 @@ mxArray *process(const mxArray *mximage, const mxArray *mxsbin) {
         dy = dy3;
       }
 
+      ASSERT(dx<=1.0f && dx >= -1.0f);
+      ASSERT(dy<=1.0f && dy >= -1.0f);
       // snap to one of 18 orientations using lookup
       int lookup_x = (int)(LOOKUP_SIZE*dx)+LOOKUP_SIZE;
-      ASSERT(lookup_x >= 0 && lookup_x < LOOKUP_SIZE*2);
+      ASSERT(lookup_x >= 0 && lookup_x < LOOKUP_SIZE*2+1);
       int lookup_y = (int)(LOOKUP_SIZE*dy)+LOOKUP_SIZE;
-      ASSERT(lookup_y >= 0 && lookup_y < LOOKUP_SIZE*2);
+      ASSERT(lookup_y >= 0 && lookup_y < LOOKUP_SIZE*2+1);
       int best_o = (int)best_o_lookup[lookup_x][lookup_y];
 
       // add to 4 histograms around pixel using linear interpolation
